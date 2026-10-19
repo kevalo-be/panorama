@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panorama</title>
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/favicon-32.png" sizes="32x32">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon-180.png">
+<meta name="theme-color" content="#14181F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Panorama">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>
+  // Set the theme before first paint so system-preference users never see a flash.
+  // A saved choice (fetched from /api/settings) overrides this a moment later.
+  (function () {
+    try {
+      var light = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+      document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+    } catch (e) { /* keep the dark default */ }
+  })();
+</script>
+<style>
+  /* ---------------- theme tokens ---------------- */
+  /* :root holds the dark theme; [data-theme="light"] overrides it. The six
+     status colours keep their MEANING on both grounds — only their exact hue
+     is tuned so red/green/amber/blue stay legible on light and dark. */
+  :root {
+    color-scheme: dark;
+
+    --ground:  #14181F;
+    --panel:   #1B212B;
+    --panel-2: #222B37;
+    --raise:   #29333F;
+    --rule:    #2A3340;
+    --ink:     #E8EDF4;
+    --muted:   #93A1B2;
+    --dim:     #667585;
+
+    --input:  #F2555A;   /* your turn — red, the only blink */
+    --active: #46CF8E;   /* working — green, breathing */
+    --done:   #33A971;   /* finished — green, steady */
+    --dirty:  #F2A93B;   /* uncommitted — amber */
+    --todo:   #7FA0E0;   /* open todos — blue */
+    --quiet:  #4C5A6A;   /* nothing — grey */
+
+    --accent: var(--todo);
+    --shadow: 0 1px 2px rgba(0,0,0,.28), 0 6px 20px rgba(0,0,0,.22);
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+
+    --ground:  #F4F6F9;
+    --panel:   #FFFFFF;
+    --panel-2: #F1F4F8;
+    --raise:   #FFFFFF;
+    --rule:    #E1E7EF;
+    --ink:     #1A2129;
+    --muted:   #566373;
+    --dim:     #8B98A7;
+
+    --input:  #D93036;
+    --active: #1F9D62;
+    --done:   #167C4C;
+    --dirty:  #B9760F;
+    --todo:   #4C6FC7;
+    --quiet:  #B2BCC8;
+
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+
+  :root {
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --r:    10px;
+    --r-sm: 7px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color .25s ease, color .25s ease;
+  }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 26px 22px 90px; }
+
+  /* micro-labels — the only place uppercase survives */
+  .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  /* ---------------- header ---------------- */
+
+  .top {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    margin-bottom: 22px;
+  }
+
+  .brand {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .brand::before {
+    content: "";
+    width: 12px; height: 12px; border-radius: 4px;
+    background: linear-gradient(135deg, var(--active), var(--todo));
+  }
+
+  .counts { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .count {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    white-space: nowrap; display: inline-flex; align-items: center; gap: 7px;
+    background: var(--panel); border: 1px solid var(--rule);
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .count b { color: var(--ink); font-weight: 600; }
+  .count::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--quiet); flex: none;
+  }
+  .count.is-input::before  { background: var(--input); }
+  .count.is-active::before { background: var(--active); }
+  .count.is-dirty::before  { background: var(--dirty); }
+  .count.is-todo::before   { background: var(--todo); }
+
+  .theme-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; flex: none;
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 999px; color: var(--muted); cursor: pointer;
+    transition: color .2s ease, background-color .2s ease, border-color .2s ease;
+  }
+  .theme-toggle:hover { color: var(--ink); border-color: var(--dim); }
+  .theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .theme-toggle svg { width: 17px; height: 17px; }
+
+  .stamp { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 100%; margin-top: 4px; }
+
+  /* ---------------- project tabs ---------------- */
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px; }
+
+  .tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: 999px; color: var(--muted); cursor: pointer;
+    font-family: var(--body); font-size: 13px; font-weight: 500;
+    padding: 6px 13px;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .tab:hover { color: var(--ink); background: var(--panel); }
+  .tab[aria-selected="true"] {
+    background: var(--panel); border-color: var(--rule);
+    color: var(--ink); box-shadow: var(--shadow);
+  }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .pip { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--quiet); }
+  .pip.is-input  { background: var(--input); }
+  .pip.is-active { background: var(--active); }
+  .pip.is-done   { background: var(--done); }
+  .pip.is-dirty  { background: var(--dirty); }
+  .pip.is-quiet  { background: transparent; box-shadow: inset 0 0 0 1.5px var(--quiet); }
+
+  /* the red pip is the one you must not miss, so it is the only thing that moves */
+  @media (prefers-reduced-motion: no-preference) {
+    .pip.is-input { animation: blink 1.3s steps(1, end) infinite; }
+    .rail.is-active { animation: breathe 2.4s ease-in-out infinite; }
+    .dot.is-running { animation: breathe 2.4s ease-in-out infinite; }
+  }
+  @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.25; } }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  .tab-badge {
+    font-family: var(--mono); font-size: 11px; color: var(--dim); letter-spacing: 0;
+  }
+  .tab[aria-selected="true"] .tab-badge { color: var(--muted); }
+
+  /* ---------------- settings page ---------------- */
+
+  .brand a { color: inherit; text-decoration: none; }
+  #settings-link[aria-current="page"] { color: var(--ink); border-color: var(--accent); }
+  .back-link {
+    display: inline-block; margin-bottom: 14px;
+    color: var(--muted); font-size: 13px; text-decoration: none;
+  }
+  .back-link:hover { color: var(--ink); }
+  .back-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .settings-section {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 14px;
+    padding: 18px 20px 20px; margin-bottom: 18px; box-shadow: var(--shadow);
+  }
+  .settings-section h3 { margin: 0 0 4px; }
+  .setting-hint code { font-family: var(--mono); font-size: 11.5px; color: var(--muted); word-break: break-all; }
+
+  .setting-hint.config-intro { max-width: 80ch; }
+  .config-form { margin-top: 14px; }
+  .config-row {
+    display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 6px 18px;
+    padding: 12px 0; border-top: 1px solid var(--rule);
+  }
+  .config-row label { font-size: 13.5px; font-weight: 500; padding-top: 7px; }
+  .config-name { display: block; font-family: var(--mono); font-size: 11px; color: var(--dim); font-weight: 400; margin-top: 2px; }
+  .config-field input {
+    width: 100%; box-sizing: border-box;
+    background: var(--ground); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 8px;
+    font-family: var(--mono); font-size: 12.5px; padding: 7px 10px;
+  }
+  .config-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .config-field input[readonly] { color: var(--muted); background: transparent; }
+  .config-field input[aria-invalid="true"] { border-color: var(--input); }
+  .config-help { color: var(--dim); font-size: 12px; margin-top: 6px; line-height: 1.6; }
+  .config-error { color: var(--input); font-size: 12.5px; margin-top: 6px; }
+  .config-missing { color: var(--dirty); font-family: var(--mono); font-size: 11.5px; margin-top: 6px; word-break: break-all; }
+  .badge {
+    display: inline-block; font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    border: 1px solid var(--rule); border-radius: 999px; padding: 0 7px; margin-left: 2px;
+  }
+  .badge.is-warn { color: var(--dirty); border-color: var(--dirty); }
+  .config-actions { display: flex; align-items: center; gap: 14px; padding-top: 14px; border-top: 1px solid var(--rule); }
+  .save-button {
+    background: var(--accent); color: var(--ground); border: 0; border-radius: 999px;
+    font-family: var(--body); font-size: 13px; font-weight: 600; padding: 8px 20px; cursor: pointer;
+  }
+  .save-button:disabled { opacity: .4; cursor: default; }
+  .save-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .config-notice { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; min-height: 1.4em; }
+  @media (max-width: 640px) {
+    .config-row { grid-template-columns: 1fr; }
+    .config-row label { padding-top: 0; }
+  }
+
+  .theme-choices { display: inline-flex; gap: 6px; margin-top: 8px; }
+  .theme-choice {
+    background: transparent; border: 1px solid var(--rule); border-radius: 999px;
+    color: var(--muted); cursor: pointer; font-family: var(--body);
+    font-size: 13px; font-weight: 500; padding: 7px 16px;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .theme-choice:hover { color: var(--ink); background: var(--panel); }
+  .theme-choice[aria-checked="true"] {
+    background: var(--panel); border-color: var(--accent);
+    color: var(--ink); box-shadow: var(--shadow);
+  }
+  .theme-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .setting-hint { color: var(--dim); font-size: 12.5px; margin: 12px 0 0; max-width: 46ch; }
+
+  /* ---------------- project panel ---------------- */
+
+  .project-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .project-head h2 {
+    font-size: 17px; font-weight: 650; letter-spacing: -0.01em;
+    color: var(--ink); margin: 0;
+  }
+  .project-head .where { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+
+  .project-note {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .project-note > .col { border-right: 1px solid var(--rule); }
+  .project-note > .col:last-child { border-right: none; }
+
+  /* ---------------- lanes ---------------- */
+
+  .lane {
+    display: grid;
+    grid-template-columns: 3px 1fr;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    margin-bottom: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: background-color .25s ease, border-color .25s ease;
+  }
+
+  .rail { background: var(--quiet); }
+  .rail.is-input  { background: var(--input); }
+  .rail.is-active { background: var(--active); }
+  .rail.is-done   { background: var(--done); }
+  .rail.is-dirty  { background: var(--dirty); }
+  .rail.is-todo   { background: var(--todo); }
+
+  .lane-head {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 15px 18px 13px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .ticket {
+    font-size: 16px; font-weight: 700; letter-spacing: 0.01em;
+    color: var(--ink); text-decoration: none;
+  }
+  a.ticket:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .ticket.is-none { color: var(--dim); font-weight: 500; }
+
+  .branch { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+
+  .lane-state {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+    text-transform: uppercase; margin-left: auto;
+    padding: 3px 9px; border-radius: 999px;
+    background: var(--panel-2);
+  }
+  .lane-state.is-input  { color: var(--input); }
+  .lane-state.is-active { color: var(--active); }
+  .lane-state.is-done   { color: var(--active); }
+  .lane-state.is-dirty  { color: var(--dirty); }
+  .lane-state.is-todo   { color: var(--todo); }
+  .lane-state.is-quiet  { color: var(--dim); }
+
+  .path { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 100%; }
+
+  .cols { display: grid; grid-template-columns: 0.85fr 1.35fr 1fr; }
+  .col { padding: 15px 18px 18px; border-right: 1px solid var(--rule); min-width: 0; }
+  .col:last-child { border-right: none; }
+  .col-label { margin-bottom: 11px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--dim); }
+
+  .stat { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+  .stat b { color: var(--ink); font-weight: 600; }
+  .plus { color: var(--active); }
+  .minus { color: var(--input); }
+  .subject { font-size: 12.5px; color: var(--muted); margin-top: 9px; line-height: 1.45; }
+
+  .session { display: flex; gap: 10px; margin-bottom: 11px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 6px; background: var(--quiet); }
+  .dot.is-needs-you { background: var(--input); }
+  .dot.is-running   { background: var(--active); }
+  .dot.is-idle      { background: var(--done); }
+  .dot.is-stale     { background: transparent; box-shadow: inset 0 0 0 1.5px var(--quiet); }
+
+  .session-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-meta { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .session-meta .tag { color: var(--muted); }
+
+  .empty { font-size: 12.5px; color: var(--dim); font-style: italic; }
+
+  /* ---------------- notes + todos ---------------- */
+
+  textarea.note {
+    width: 100%; min-height: 62px; resize: vertical;
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--r-sm);
+    color: var(--ink);
+    font-family: var(--body); font-size: 13px; line-height: 1.5;
+    padding: 9px 11px;
+    transition: border-color .15s ease, background-color .25s ease;
+  }
+  textarea.note::placeholder { color: var(--dim); }
+  textarea.note:focus, input.add:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  ul.todos { list-style: none; margin: 12px 0 8px; padding: 0; }
+  ul.todos li { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 6px; font-size: 13px; }
+  ul.todos li.done .todo-text { color: var(--dim); text-decoration: line-through; }
+  ul.todos input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); flex: none; }
+  .todo-text { flex: 1; min-width: 0; word-break: break-word; }
+
+  button.kill {
+    background: none; border: none; color: var(--dim); cursor: pointer;
+    font-family: var(--mono); font-size: 15px; line-height: 1; padding: 2px 4px;
+    border-radius: 4px;
+  }
+  button.kill:hover { color: var(--input); }
+
+  input.add {
+    width: 100%; background: transparent; border: none;
+    border-bottom: 1px dashed var(--rule);
+    color: var(--ink); font-family: var(--body); font-size: 13px;
+    padding: 6px 2px; border-radius: 2px;
+  }
+  input.add::placeholder { color: var(--dim); }
+
+  /* ---------------- asides ---------------- */
+
+  .aside {
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    padding: 18px 20px 20px;
+    margin-top: 26px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  .aside h2 {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 14px;
+  }
+  .orphan { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 7px; line-height: 1.5; }
+  .orphan span { color: var(--dim); }
+
+  .boot { color: var(--muted); font-size: 13px; padding: 44px 0; }
+
+  @media (max-width: 900px) {
+    .cols, .project-note { grid-template-columns: 1fr; }
+    .col { border-right: none; border-bottom: 1px solid var(--rule); }
+    .col:last-child { border-bottom: none; }
+    .project-note > .col { border-right: none; border-bottom: 1px solid var(--rule); }
+    .project-note > .col:last-child { border-bottom: none; }
+    .lane-state { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1 class="brand"><a href="/">Panorama</a></h1>
+    <div class="counts" id="counts"></div>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme"></button>
+    <a class="theme-toggle" id="settings-link" href="/settings" aria-label="Settings" title="Settings"></a>
+    <div class="stamp" id="stamp">reading git and ~/.claude…</div>
+  </div>
+
+  <div id="settings-page" hidden></div>
+
+  <div id="board">
+  <div class="tabs" id="tabs" role="tablist" aria-label="Projects"></div>
+
+  <div id="panel"><div class="boot">Scanning your project roots. The first pass can take a few seconds.</div></div>
+
+  <div class="aside">
+    <h2>Inbox — not tied to a project</h2>
+    <div id="inbox"></div>
+  </div>
+
+  <div class="aside" id="orphan-box" hidden>
+    <h2>Sessions outside your roots</h2>
+    <div id="orphans"></div>
+  </div>
+  </div>
+</div>
+
+<script>
+const POLL_MS = 5000;
+const tabsEl = document.getElementById("tabs");
+const panelEl = document.getElementById("panel");
+
+const laneNodes = new Map();   // worktree path -> lane element
+const notesNodes = new Map();  // note key -> notes column, so unsaved typing survives
+let activeKey = null;
+let lastProjects = [];
+let inboxDone = false;
+
+// The same page serves the board at / and the settings page at /settings.
+const ON_SETTINGS = location.pathname.replace(/\/+$/, "") === "/settings";
+const ICON_GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>';
+const THEME_CHOICES = [
+  { pref: "system", label: "System" },
+  { pref: "light",  label: "Light" },
+  { pref: "dark",   label: "Dark" },
+];
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const ago = s => s < 60 ? `${s}s ago`
+  : s < 3600 ? `${Math.floor(s / 60)}m ago`
+  : s < 86400 ? `${Math.floor(s / 3600)}h ago`
+  : `${Math.floor(s / 86400)}d ago`;
+
+const STATE_LABEL = {
+  input: "your turn",
+  active: "working",
+  done: "finished",
+  dirty: "uncommitted",
+  todo: "open todos",
+  quiet: "quiet",
+};
+
+async function api(path, method, body, keepalive = false) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    keepalive,  // lets a save finish when you navigate away (e.g. to Settings)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/* ---------- theme ---------- */
+
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.5 13.2A8.5 8.5 0 1 1 10.8 2.5a7 7 0 0 0 10.7 10.7Z"/></svg>';
+const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>';
+const themeBtn = document.getElementById("theme-toggle");
+
+// "system" | "light" | "dark". "system" follows the OS; the other two pin it.
+let themePref = "system";
+const osMedia = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+function effectiveTheme(pref) {
+  if (pref === "light" || pref === "dark") return pref;
+  return osMedia && osMedia.matches ? "light" : "dark";
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  // Show the icon of the theme you would switch TO.
+  themeBtn.innerHTML = theme === "dark" ? ICON_SUN : ICON_MOON;
+  themeBtn.title = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+  themeBtn.setAttribute("aria-label", themeBtn.title);
+}
+// pref: "system" | "light" | "dark". persist=false on the initial load from the server.
+function setThemePref(pref, persist) {
+  themePref = pref;
+  applyTheme(effectiveTheme(pref));
+  refreshThemeChoices();  // keep the settings page's buttons in sync when it is open
+  if (persist) api("/api/settings", "PUT", { theme: pref }).catch(() => {});
+}
+applyTheme(currentTheme());  // paint the button for whatever the head script picked
+
+// The header toggle is a quick light/dark flip; it pins an explicit choice.
+themeBtn.addEventListener("click", () => {
+  setThemePref(currentTheme() === "dark" ? "light" : "dark", true);
+});
+
+// Re-follow the OS when it changes appearance, but only while on "system".
+if (osMedia) osMedia.addEventListener("change", () => {
+  if (themePref === "system") applyTheme(effectiveTheme("system"));
+});
+
+async function initTheme() {
+  // The head script set the theme from the OS preference; a saved choice wins.
+  try {
+    const s = await api("/api/settings");
+    setThemePref(s.theme || "system", false);
+  } catch { /* stay with the OS preference */ }
+}
+
+/* ---------- notes column, owns its own state ---------- */
+
+function todosHtml(todos) {
+  return todos.map(t => `
+    <li class="${t.done ? "done" : ""}" data-id="${t.id}">
+      <input type="checkbox" ${t.done ? "checked" : ""} aria-label="Mark done">
+      <span class="todo-text">${esc(t.text)}</span>
+      <button class="kill" title="Remove">×</button>
+    </li>`).join("");
+}
+
+function notesColumn(key, note, todos, label, placeholder) {
+  const cached = notesNodes.get(key);
+  if (cached) return cached;
+
+  const col = document.createElement("div");
+  col.className = "col notes-col";
+  col.innerHTML = `
+    <div class="col-label">${esc(label)}</div>
+    <textarea class="note" placeholder="${esc(placeholder)}">${esc(note)}</textarea>
+    <ul class="todos">${todosHtml(todos)}</ul>
+    <input class="add" type="text" placeholder="Add a todo, press Enter">`;
+
+  const textarea = col.querySelector(".note");
+  let timer;
+  const save = () => api("/api/notes", "PUT", { key, body: textarea.value }, true).catch(() => {});
+  textarea.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(save, 700); });
+  textarea.addEventListener("blur", () => { clearTimeout(timer); save(); });
+
+  const list = col.querySelector(".todos");
+  list.addEventListener("change", e => {
+    const li = e.target.closest("li");
+    if (!li) return;
+    li.classList.toggle("done", e.target.checked);
+    api(`/api/todos/${li.dataset.id}`, "PATCH", { done: e.target.checked }).catch(() => {});
+  });
+  list.addEventListener("click", e => {
+    if (!e.target.classList.contains("kill")) return;
+    const li = e.target.closest("li");
+    li.remove();
+    api(`/api/todos/${li.dataset.id}`, "DELETE").catch(() => {});
+  });
+
+  const add = col.querySelector(".add");
+  add.addEventListener("keydown", async e => {
+    if (e.key !== "Enter" || !add.value.trim()) return;
+    const created = await api("/api/todos", "POST", { key, text: add.value });
+    add.value = "";
+    list.insertAdjacentHTML("beforeend", todosHtml([created]));
+  });
+
+  notesNodes.set(key, col);
+  return col;
+}
+
+/* ---------- lanes ---------- */
+
+function changesHtml(g) {
+  const rows = [];
+  rows.push(g.dirty_files
+    ? `<div class="stat"><b>${g.dirty_files}</b> uncommitted${g.untracked ? ` (${g.untracked} new)` : ""}</div>`
+    : `<div class="stat">working tree clean</div>`);
+  const w = g.working || {};
+  if (w.insertions || w.deletions) {
+    rows.push(`<div class="stat"><span class="plus">+${w.insertions}</span> <span class="minus">−${w.deletions}</span> not staged</div>`);
+  }
+  const c = g.committed || {};
+  if (c.files) {
+    rows.push(`<div class="stat"><b>${c.files}</b> files vs ${esc(g.base)} <span class="plus">+${c.insertions}</span> <span class="minus">−${c.deletions}</span></div>`);
+  }
+  if (g.ahead !== null || g.behind !== null) {
+    rows.push(`<div class="stat">↑${g.ahead ?? 0} ahead · ↓${g.behind ?? 0} behind</div>`);
+  }
+  if (g.last_commit && g.last_commit.sha) {
+    rows.push(`<div class="subject">${esc(g.last_commit.sha)} · ${esc(g.last_commit.ago)}<br>${esc(g.last_commit.subject)}</div>`);
+  }
+  return rows.join("");
+}
+
+function sessionsHtml(sessions, pids) {
+  if (!sessions.length) return `<div class="empty">No Claude session has run here.</div>`;
+  const live = pids.length
+    ? `<div class="session-meta" style="margin-bottom:8px">${pids.length} live claude process${pids.length > 1 ? "es" : ""} here</div>`
+    : "";
+  return live + sessions.map(s => `
+    <div class="session">
+      <div class="dot is-${s.status}"></div>
+      <div style="min-width:0">
+        <div class="session-title" title="${esc(s.title)}">${esc(s.title)}</div>
+        <div class="session-meta"><span class="tag">${esc(s.status.replace("-", " "))}</span> · ${ago(s.age_seconds)} · ${esc(s.hint)}</div>
+      </div>
+    </div>`).join("");
+}
+
+function buildLane(lane) {
+  const el = document.createElement("div");
+  el.className = "lane";
+  el.innerHTML = `
+    <div class="rail"></div>
+    <div>
+      <div class="lane-head">
+        <span class="ticket-slot"></span>
+        <span class="branch"></span>
+        <span class="lane-state"></span>
+        <span class="path"></span>
+      </div>
+      <div class="cols">
+        <div class="col"><div class="col-label">Changes</div><div class="changes-body"></div></div>
+        <div class="col"><div class="col-label">Claude sessions</div><div class="sessions-body"></div></div>
+      </div>
+    </div>`;
+  el.querySelector(".cols").appendChild(
+    notesColumn(lane.key, lane.note, lane.todos, "Notes & next",
+                "Where you left off, what to check, who to ask…"));
+  laneNodes.set(lane.key, el);
+  return el;
+}
+
+function paintLane(el, lane) {
+  el.querySelector(".rail").className = `rail is-${lane.rail}`;
+  el.querySelector(".ticket-slot").innerHTML = lane.ticket
+    ? (lane.ticket_url
+        ? `<a class="ticket" href="${esc(lane.ticket_url)}" target="_blank" rel="noopener">${esc(lane.ticket)}</a>`
+        : `<span class="ticket">${esc(lane.ticket)}</span>`)
+    : `<span class="ticket is-none">no ticket</span>`;
+  el.querySelector(".branch").textContent = lane.branch;
+  const state = el.querySelector(".lane-state");
+  state.className = `lane-state is-${lane.rail}`;
+  state.textContent = STATE_LABEL[lane.rail] || lane.rail;
+  el.querySelector(".path").textContent = lane.short_path;
+  el.querySelector(".changes-body").innerHTML = changesHtml(lane.git);
+  el.querySelector(".sessions-body").innerHTML = sessionsHtml(lane.sessions, lane.live_pids);
+}
+
+/* ---------- tabs ---------- */
+
+function selectProject(key) {
+  activeKey = key;
+  paintTabs(lastProjects);
+  paintPanel(lastProjects);
+}
+
+function paintTabs(projects) {
+  tabsEl.innerHTML = "";
+  projects.forEach((p, i) => {
+    const c = p.counts;
+    const bits = [`${c.worktrees} wt`];
+    if (c.needs_you) bits.push(`${c.needs_you} waiting`);
+    else if (c.running) bits.push(`${c.running} running`);
+    if (c.open_todos) bits.push(`${c.open_todos} todo`);
+
+    const tab = document.createElement("button");
+    tab.className = "tab";
+    tab.type = "button";
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(p.key === activeKey));
+    tab.title = `${p.name} — ${STATE_LABEL[p.status]}${i < 9 ? ` (press ${i + 1})` : ""}`;
+    tab.innerHTML =
+      `<span class="pip is-${p.status}"></span>${esc(p.name)}` +
+      `<span class="tab-badge">${esc(bits.join(" · "))}</span>`;
+    tab.addEventListener("click", () => selectProject(p.key));
+    tabsEl.appendChild(tab);
+  });
+}
+
+/* ---------- settings page ---------- */
+
+const settingsEl = document.getElementById("settings-page");
+let config = null;          // last GET/PUT /api/config response
+let configErrors = {};      // option name -> message from a refused save
+let configSaving = false;   // a PUT is in flight
+
+function setNotice(text) {
+  // Same element every time, so screen readers announce the change.
+  document.getElementById("config-notice").textContent = text;
+}
+
+const SOURCE_LABEL = {
+  file: "from panorama.env",
+  env: "set by an environment variable, read-only here",
+  default: "default",
+};
+
+function paintSettings() {
+  settingsEl.innerHTML = `
+    <a class="back-link" href="/">← Back to the board</a>
+    <div class="project-head"><h2>Settings</h2></div>
+
+    <section class="settings-section">
+      <h3 class="col-label">Appearance</h3>
+      <div class="theme-choices" role="radiogroup" aria-label="Theme">
+        ${THEME_CHOICES.map(c => `
+          <button class="theme-choice" type="button" role="radio"
+                  data-theme-pref="${c.pref}" aria-checked="${String(themePref === c.pref)}">
+            ${esc(c.label)}</button>`).join("")}
+      </div>
+      <p class="setting-hint">“System” follows your system appearance. Your choice is stored on the
+        server (SQLite), not in the browser.</p>
+    </section>
+
+    <section class="settings-section">
+      <h3 class="col-label">Configuration</h3>
+      <div id="config-body"><p class="setting-hint">Reading configuration…</p></div>
+      <p class="config-notice" id="config-notice" role="status" aria-live="polite"></p>
+    </section>`;
+  settingsEl.querySelectorAll(".theme-choice").forEach(btn =>
+    btn.addEventListener("click", () => setThemePref(btn.dataset.themePref, true)));
+  loadConfig();
+}
+
+async function loadConfig() {
+  try {
+    config = await api("/api/config");
+  } catch {
+    document.getElementById("config-body").innerHTML =
+      `<p class="setting-hint">Could not read the configuration. Is Panorama still running?</p>`;
+    return;
+  }
+  paintConfig();
+}
+
+function paintConfig() {
+  const body = document.getElementById("config-body");
+  const where = config.file_exists
+    ? `Saved to <code>${esc(config.file)}</code>.`
+    : `Saving creates <code>${esc(config.file)}</code>.`;
+  body.innerHTML = `
+    <p class="setting-hint config-intro">${where} Most changes apply on the next refresh; the ones marked
+      “restart” apply after Panorama restarts.</p>
+    <form class="config-form" novalidate>
+      ${config.options.map(o => {
+        const id = `opt-${o.name}`;
+        const badges = [`<span class="badge">${esc(SOURCE_LABEL[o.source])}</span>`];
+        if (!o.live) badges.push(`<span class="badge">restart</span>`);
+        if (o.restart_pending) badges.push(`<span class="badge is-warn">restart pending</span>`);
+        const missing = o.missing.length
+          ? `<div class="config-missing" id="${id}-missing">Not found: ${o.missing.map(esc).join(", ")}</div>` : "";
+        const error = configErrors[o.name]
+          ? `<div class="config-error" id="${id}-error">${esc(configErrors[o.name])}</div>` : "";
+        const describedBy = [configErrors[o.name] && `${id}-error`, o.missing.length && `${id}-missing`,
+                             `${id}-help`].filter(Boolean).join(" ");
+        return `
+          <div class="config-row">
+            <label for="${id}">${esc(o.label)}<span class="config-name">${esc(o.name)}</span></label>
+            <div class="config-field">
+              <input id="${id}" name="${esc(o.name)}" type="text" spellcheck="false" autocomplete="off"
+                     value="${esc(o.value)}" data-original="${esc(o.value)}"
+                     placeholder="${esc(o.default)}" ${o.editable ? "" : "readonly"}
+                     aria-describedby="${describedBy}" ${configErrors[o.name] ? 'aria-invalid="true"' : ""}>
+              ${error}${missing}
+              <div class="config-help" id="${id}-help">${esc(o.help)} ${badges.join(" ")}</div>
+            </div>
+          </div>`;
+      }).join("")}
+      <div class="config-actions">
+        <button class="save-button" type="submit" disabled>Save</button>
+      </div>
+    </form>`;
+  const form = body.querySelector("form");
+  form.addEventListener("input", updateSaveButton);
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    if (configSaving) return;
+    const changes = Object.fromEntries(changedInputs().map(i => [i.name, i.value]));
+    if (Object.keys(changes).length) saveConfig(changes);
+  });
+}
+
+function changedInputs() {
+  return [...document.querySelectorAll(".config-form input:not([readonly])")]
+    .filter(i => i.value !== i.dataset.original);
+}
+
+function updateSaveButton() {
+  const save = document.querySelector(".save-button");
+  if (save) save.disabled = configSaving || changedInputs().length === 0;
+}
+
+// Repaint from `config`, then put back what is typed but not saved.
+function repaintKeeping(values) {
+  paintConfig();
+  for (const [name, value] of Object.entries(values)) {
+    const input = document.getElementById(`opt-${name}`);
+    if (input && !input.readOnly) input.value = value;
+  }
+  updateSaveButton();
+}
+
+function typedValues() {
+  return Object.fromEntries(changedInputs().map(i => [i.name, i.value]));
+}
+
+async function saveConfig(changes) {
+  configSaving = true;
+  updateSaveButton();
+  document.querySelector(".config-form").setAttribute("aria-busy", "true");
+  setNotice("Saving…");
+  let res = null;
+  try {
+    res = await fetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+  } catch { /* handled below: res stays null */ }
+  configSaving = false;
+  const typed = typedValues();  // includes anything typed while saving
+  if (!res) {
+    repaintKeeping(typed);
+    setNotice("Could not reach Panorama. Nothing was saved.");
+    return;
+  }
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    config = data;
+    configErrors = {};
+    // keep edits made while the request was in flight
+    const later = Object.fromEntries(Object.entries(typed).filter(([n, v]) => changes[n] !== v));
+    repaintKeeping(later);
+    setNotice(config.options.some(o => o.restart_pending)
+      ? "Saved. Restart Panorama to apply the options marked “restart pending”."
+      : "Saved. The board uses the new values from its next refresh.");
+    const back = document.getElementById(`opt-${Object.keys(changes)[0]}`);
+    if (back) back.focus();
+    return;
+  }
+  configErrors = (data.detail && data.detail.errors) || {};
+  repaintKeeping(typed);
+  if (Object.keys(configErrors).length) {
+    setNotice("Nothing was saved. Fix the fields marked in red.");
+    const first = document.querySelector('.config-form [aria-invalid="true"]');
+    if (first) first.focus();
+  } else {
+    setNotice(`Nothing was saved (HTTP ${res.status}). Check the Panorama log.`);
+  }
+}
+
+// Reflect the current preference on the settings page buttons when it is open.
+function refreshThemeChoices() {
+  settingsEl.querySelectorAll(".theme-choice").forEach(btn =>
+    btn.setAttribute("aria-checked", String(btn.dataset.themePref === themePref)));
+}
+
+function paintPanel(projects) {
+  const project = projects.find(p => p.key === activeKey) || projects[0];
+  if (!project) return;
+
+  panelEl.innerHTML = "";
+  const c = project.counts;
+
+  const head = document.createElement("div");
+  head.className = "project-head";
+  head.innerHTML = `<h2>${esc(project.name)}</h2>
+    <span class="where">${c.worktrees} worktree${c.worktrees > 1 ? "s" : ""} · ${esc(STATE_LABEL[project.status])}</span>`;
+  panelEl.appendChild(head);
+
+  const notes = document.createElement("div");
+  notes.className = "project-note";
+  notes.appendChild(
+    notesColumn(project.note_key, project.note, project.todos, "Project notes",
+                "Decisions, conventions, anything that outlives one branch…"));
+  const glance = document.createElement("div");
+  glance.className = "col";
+  glance.innerHTML = `<div class="col-label">At a glance</div>
+    <div class="stat"><b>${c.needs_you}</b> sessions waiting on you</div>
+    <div class="stat"><b>${c.running}</b> sessions working</div>
+    <div class="stat"><b>${c.dirty}</b> worktrees with uncommitted changes</div>
+    <div class="stat"><b>${c.open_todos}</b> open todos in this project</div>`;
+  notes.appendChild(glance);
+  panelEl.appendChild(notes);
+
+  project.lanes.forEach(lane => {
+    const el = laneNodes.get(lane.key) || buildLane(lane);
+    paintLane(el, lane);
+    panelEl.appendChild(el);
+  });
+}
+
+function paintCounts(t) {
+  document.getElementById("counts").innerHTML = `
+    <span class="count is-input"><b>${t.needs_you}</b> waiting on you</span>
+    <span class="count is-active"><b>${t.running}</b> working</span>
+    <span class="count is-dirty"><b>${t.dirty}</b> dirty</span>
+    <span class="count is-todo"><b>${t.open_todos}</b> todos</span>
+    <span class="count"><b>${t.projects}</b> projects, ${t.worktrees} worktrees</span>`;
+}
+
+function paintOrphans(list) {
+  document.getElementById("orphan-box").hidden = list.length === 0;
+  document.getElementById("orphans").innerHTML = list.map(s =>
+    `<div class="orphan">${esc(s.status.replace("-", " "))} · ${ago(s.age_seconds)} · <span>${esc(s.cwd || "unknown directory")}</span><br>${esc(s.title)}</div>`
+  ).join("");
+}
+
+/* ---------- poll loop ---------- */
+
+async function tick() {
+  let data;
+  try {
+    data = await api("/api/overview");
+  } catch {
+    document.getElementById("stamp").textContent = "Backend unreachable — is app.py still running?";
+    return;
+  }
+
+  paintCounts(data.totals);
+  document.getElementById("stamp").textContent =
+    `updated ${new Date(data.generated_at).toLocaleTimeString()} · roots: ${data.roots.join(", ")}`;
+
+  if (!inboxDone) {
+    document.getElementById("inbox").appendChild(
+      notesColumn("inbox", data.inbox.note, data.inbox.todos, "Loose ends",
+                  "Anything that has no project yet…"));
+    inboxDone = true;
+  }
+
+  lastProjects = data.projects;
+
+  if (!data.projects.length) {
+    paintTabs([]);
+    activeKey = null;
+    panelEl.innerHTML = `<div class="boot">No git worktrees found under ${esc(data.roots.join(", "))}. Set your project folders in <a href="/settings">Settings</a>.</div>`;
+  } else {
+    // Never switch tabs under you; only pick one when the current key is gone.
+    if (!data.projects.some(p => p.key === activeKey))
+      activeKey = data.projects[0].key;
+    paintTabs(data.projects);
+    if (panelEl.contains(document.activeElement)) {
+      // Rebuilding the panel would move the node you are typing in and blur it,
+      // so repaint only the lanes you are not touching.
+      const project = data.projects.find(p => p.key === activeKey);
+      project.lanes.forEach(lane => {
+        const el = laneNodes.get(lane.key);
+        if (el && !el.contains(document.activeElement)) paintLane(el, lane);
+      });
+    } else {
+      paintPanel(data.projects);
+    }
+  }
+
+  paintOrphans(data.orphan_sessions);
+}
+
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const n = parseInt(e.key, 10);
+  if (!n || n > lastProjects.length) return;
+  selectProject(lastProjects[n - 1].key);
+});
+
+document.getElementById("settings-link").innerHTML = ICON_GEAR;
+
+if (ON_SETTINGS) {
+  // A separate page: no board, no polling.
+  document.title = "Settings · Panorama";
+  document.getElementById("board").hidden = true;
+  document.getElementById("stamp").hidden = true;
+  document.getElementById("settings-link").setAttribute("aria-current", "page");
+  settingsEl.hidden = false;
+  initTheme().then(paintSettings);
+} else {
+  initTheme();
+  tick();
+  setInterval(tick, POLL_MS);
+}
+</script>
+</body>
+</html>

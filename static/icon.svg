@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Panorama">
+  <!-- Master icon. Regenerate the PNGs and the .icns from this with make-macapp.sh. -->
+  <rect width="512" height="512" rx="115" fill="#14181F"/>
+  <rect x="40" y="40" width="432" height="432" rx="86" fill="none" stroke="#29333F" stroke-width="4"/>
+  <!-- Four lanes: a colored rail plus a grey body, echoing the board's lane design.
+       Colors follow the status scale: input, active, dirty, todo. -->
+  <g>
+    <rect x="120" y="140" width="14" height="40" rx="7" fill="#F2555A"/>
+    <rect x="150" y="150" width="242" height="20" rx="10" fill="#29333F"/>
+
+    <rect x="120" y="204" width="14" height="40" rx="7" fill="#46CF8E"/>
+    <rect x="150" y="214" width="196" height="20" rx="10" fill="#29333F"/>
+
+    <rect x="120" y="268" width="14" height="40" rx="7" fill="#F2A93B"/>
+    <rect x="150" y="278" width="172" height="20" rx="10" fill="#29333F"/>
+
+    <rect x="120" y="332" width="14" height="40" rx="7" fill="#7FA0E0"/>
+    <rect x="150" y="342" width="222" height="20" rx="10" fill="#29333F"/>
+  </g>
+</svg>

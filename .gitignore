@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets / local config (keep panorama.env.example)
+panorama.env
+panorama.env.bak
+.panorama.env.*
+.env
+
+# Local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local planning notes, never published
+docs/

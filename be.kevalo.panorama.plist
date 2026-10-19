@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Start Panorama at login and keep it running.
+
+    From source:
+      1. Replace __PATH_TO_PANORAMA__ with the directory holding app.py
+      2. Replace __UV__ with the output of `which uv`
+    With the downloaded binary:
+      1. Make ProgramArguments a single <string> with the binary's full path
+      2. Replace __PATH_TO_PANORAMA__ with ~/.config/panorama spelled out
+         (/Users/<you>/.config/panorama), where your panorama.env lives
+    Then:
+      cp this to ~/Library/LaunchAgents/be.kevalo.panorama.plist
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/be.kevalo.panorama.plist
+
+  Settings come from panorama.env, not from here.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>be.kevalo.panorama</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__UV__</string>
+        <string>run</string>
+        <string>__PATH_TO_PANORAMA__/app.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PATH_TO_PANORAMA__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/panorama.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/panorama.err</string>
+</dict>
+</plist>

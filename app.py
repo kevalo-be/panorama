@@ -949,4 +949,16 @@ if __name__ == "__main__":
     if not any(root.is_dir() for root in ROOTS):
         print("  none of the roots exist: set PANORAMA_ROOTS", file=sys.stderr)
 
-    uvicorn.run(app, host="127.0.0.1", port=int(option("PORT")))
+    if STARTED_BY_APP:
+        # Panorama.app holds our stdin open. When the app goes away for any
+        # reason (quit, crash, Force Quit), stdin closes and we exit too.
+        import threading
+
+        def exit_with_app() -> None:
+            sys.stdin.read()
+            os._exit(0)
+
+        threading.Thread(target=exit_with_app, daemon=True).start()
+
+    # The app's log would otherwise get a line per poll, forever.
+    uvicorn.run(app, host="127.0.0.1", port=int(option("PORT")), access_log=not STARTED_BY_APP)

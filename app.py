@@ -71,6 +71,8 @@ OPTION_BY_NAME = {o["name"]: o for o in OPTIONS}
 # Options set as real environment variables win over the file, so the settings
 # page shows them read-only. Recorded before the file is read.
 FROM_ENVIRONMENT = {name for name in OPTION_BY_NAME if name in os.environ}
+# Set by Panorama.app, which starts its own server on a free port each launch.
+STARTED_BY_APP = os.environ.get("PANORAMA_APP") == "1"
 FILE_VALUES: dict[str, str] = {}
 
 
@@ -855,7 +857,10 @@ def get_config() -> dict[str, Any]:
     for meta in OPTIONS:
         name = meta["name"]
         value = option(name)
-        source = "env" if name in FROM_ENVIRONMENT else "file" if name in FILE_VALUES else "default"
+        if STARTED_BY_APP and name == "PORT":
+            source = "app"
+        else:
+            source = "env" if name in FROM_ENVIRONMENT else "file" if name in FILE_VALUES else "default"
         options.append({
             "name": name,
             "label": meta["label"],
@@ -887,6 +892,9 @@ def _save_config(changes: dict[str, str]) -> dict[str, Any]:
     for name, value in changes.items():
         if name not in OPTION_BY_NAME:
             errors[name] = "Unknown option."
+            continue
+        if STARTED_BY_APP and name == "PORT":
+            errors[name] = "Chosen by the Panorama app at each start."
             continue
         if name in FROM_ENVIRONMENT:
             errors[name] = "Set by an environment variable; change it there."

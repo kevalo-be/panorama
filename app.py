@@ -33,7 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 HOME = Path.home()
 # Bundled files (static/) sit next to app.py, or in the unpacked bundle when

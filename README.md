@@ -24,10 +24,26 @@ Claude Code for the session half of the board.
 
 ## Install
 
-Configure before the first start (next section). Without a config Panorama
-scans `~/work` only.
+On a Mac, the app is the easiest. Elsewhere, pick a binary or run from source,
+and configure before the first start (next section): without a config
+Panorama scans `~/work` only.
 
-### Option A: download the binary
+### Option A: the Mac app
+
+Download the `.dmg` for your Mac from the
+[latest release](https://github.com/kevalo-be/panorama/releases/latest):
+`Panorama-<version>-arm64.dmg` for Apple Silicon, `Panorama-<version>-x86_64.dmg`
+for Intel. Open it and drag Panorama to Applications. It needs macOS 13 or
+later.
+
+The app is signed and notarized by Apple, so it opens without warnings. It
+shows the board in its own window, starts its own server on a free port while
+it is open, and stops it when you quit. Set your project folders on its
+Settings page (Panorama → Settings…, or ⌘,); they are saved to
+`~/.config/panorama/panorama.env`. To start it at login, choose
+*Panorama → Open at Login*. Its log is in `~/Library/Logs/Panorama/`.
+
+### Option B: download the binary
 
 One file with Python and everything else bundled, about 15 MB. Pick the asset
 for your machine from the [latest release](https://github.com/kevalo-be/panorama/releases/latest):
@@ -39,7 +55,7 @@ for your machine from the [latest release](https://github.com/kevalo-be/panorama
 | Linux, x86_64 | `panorama-<version>-linux-x86_64` |
 
 ```bash
-V=0.1.0                       # the version you are installing
+V=0.2.0                       # the version you are installing
 A=panorama-$V-macos-arm64     # your asset from the table
 curl -LO https://github.com/kevalo-be/panorama/releases/download/v$V/$A
 curl -LO https://github.com/kevalo-be/panorama/releases/download/v$V/SHA256SUMS
@@ -51,18 +67,11 @@ mkdir -p ~/.local/bin && mv $A ~/.local/bin/panorama
 `~/.local/bin` is not on the `PATH` by default on macOS. Add it to your shell
 profile, or start the binary by its full path.
 
-The binaries are not signed. Downloaded with `curl` as above, macOS runs them
-as is. If you downloaded with a browser instead, macOS blocks the first start;
-clear the quarantine flag once:
-
-```bash
-xattr -d com.apple.quarantine ~/.local/bin/panorama
-```
-
-Every binary is built by CI from the source tagged in this repository, tested
+The macOS binaries are signed and notarized by Apple, so they also run when
+downloaded with a browser. Every binary is built by CI from the source tagged in this repository, tested
 before release, and listed in `SHA256SUMS`.
 
-### Option B: run from source with uv
+### Option C: run from source with uv
 
 [uv](https://docs.astral.sh/uv/) reads the dependencies declared at the top of
 `app.py`, so there is no virtualenv to manage.
@@ -72,7 +81,7 @@ brew install uv git            # or your package manager
 git clone https://github.com/kevalo-be/panorama && cd panorama
 ```
 
-### Option C: plain Python
+### Option D: plain Python
 
 Python 3.10 or newer, in a virtualenv (Homebrew and recent Debian/Ubuntu refuse
 a global `pip install`):
@@ -86,11 +95,11 @@ pip install -r requirements.txt
 ## Configure
 
 The easiest way is the **Settings** page: click the gear in the board's header,
-or open http://127.0.0.1:8787/settings. It shows every option below with its
+or open http://127.0.0.1:8787/settings (in the Mac app: Panorama → Settings…,
+or ⌘,). It shows every option below with its
 current value and where that value comes from, and saving writes it to
 `panorama.env` for you, keeping your comments. Most options apply on the next
-refresh; the port and the database path apply after a restart (and for the
-Dock launcher from `make-macapp.sh`, a new port also means re-running it). An option set as
+refresh; the port and the database path apply after a restart. An option set as
 a real environment variable is shown read-only there, because the variable
 wins over the file.
 
@@ -150,10 +159,12 @@ corrupt it.
 
 ## Start
 
+The Mac app starts its own server when you open it. Otherwise:
+
 ```bash
-panorama            # option A
-uv run app.py       # option B, inside the clone
-python app.py       # option C, inside the clone with the venv active
+panorama            # option B
+uv run app.py       # option C, inside the clone
+python app.py       # option D, inside the clone with the venv active
 ```
 
 On start, Panorama prints which `panorama.env` it loaded and which folders and
@@ -163,7 +174,12 @@ http://127.0.0.1:8787, or the port you set in `PORT`.
 
 ## Run at login
 
-### macOS: launchd
+### macOS: the Mac app
+
+Choose *Panorama → Open at Login* in the app's menu. It appears under
+*System Settings → General → Login Items*, where you can also switch it off.
+
+### macOS: launchd, for the binary or a source checkout
 
 `be.kevalo.panorama.plist` is a launchd job that starts Panorama at login and
 restarts it if it dies. Its header comment says what to fill in:
@@ -229,17 +245,15 @@ bind-mount all three and `lsof` still wouldn't see your `claude` processes.
 
 ## Run it as an app
 
-Panorama stays a localhost server, but it can have its own window and Dock icon:
+On a Mac, the [Mac app](#option-a-the-mac-app) is the simplest way. With the
+binary or from source, Panorama stays a localhost server, but your browser can
+still give it its own window and Dock icon:
 
 - **Standalone window.** With the server running, open Panorama
   in **Safari** and choose *File → Add to Dock*, in **Chrome** choose
   *Cast, save and share → Install page as app*, or in **Edge** choose
   *Apps → Install this site as an app*. Both use the bundled manifest and icon. Pair it
   with the login job above and it is just there.
-- **Double-clickable launcher (macOS, from source).** `./make-macapp.sh` builds
-  `dist/Panorama.app`, which starts the server with uv if needed and opens a
-  chromeless window. It bakes in this clone's path and port, so re-run it after
-  moving the clone. It needs `uv` and `rsvg-convert` (`brew install librsvg`).
 
 ## How to read the board
 

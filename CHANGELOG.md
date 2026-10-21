@@ -6,6 +6,26 @@ All notable changes to Panorama are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+
+### Added
+- **Panorama.app**, a native Mac app (macOS 13 or later) for Apple Silicon and
+  Intel, as a `.dmg` on each release. It shows the board in its own window,
+  starts its own server on a free port while it is open and stops it when it
+  quits (also after a crash or Force Quit), opens links to other sites in
+  your browser, and can start at login. Signed and notarized by Apple.
+- The Settings page shows the port as chosen by the app when the server runs
+  inside it.
+
+### Changed
+- The macOS binaries are now signed and notarized, so they also run when
+  downloaded with a browser.
+
+### Removed
+- `make-macapp.sh`, the Chrome-window launcher for a source checkout. The Mac
+  app replaces it; source installs can still use the browser's *Add to Dock*
+  or *Install app*.
+
 ## [0.1.0] - 2026-10-19
 
 First public release.
@@ -42,5 +62,6 @@ First public release.
   at no file gets a warning.
 - A launchd job for starting at login on macOS.
 
-[Unreleased]: https://github.com/kevalo-be/panorama/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kevalo-be/panorama/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kevalo-be/panorama/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kevalo-be/panorama/releases/tag/v0.1.0

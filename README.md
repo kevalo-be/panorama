@@ -116,13 +116,18 @@ $EDITOR ~/.config/panorama/panorama.env    # set PANORAMA_ROOTS at least
 From a clone, `cp panorama.env.example panorama.env` works too. Panorama reads
 the first file it finds, in this order:
 
-1. the path in `$PANORAMA_ENV`
-2. `panorama.env` in the directory you start Panorama from
-3. `~/.config/panorama/panorama.env`
+1. `panorama.env` in the directory you start Panorama from
+2. `~/.config/panorama/panorama.env`
+
+Set `PANORAMA_ENV` to a path to use exactly that file instead: Panorama then
+reads only that file, and the Settings page saves to it, creating it if it
+doesn't exist yet.
 
 Real environment variables override the file. A hand edit is read at startup
 only, so restart after editing the file directly. With no file at all, the
-Settings page creates `~/.config/panorama/panorama.env` on the first save.
+Settings page creates `~/.config/panorama/panorama.env` on the first save. A
+value that isn't valid, such as a scan depth of `abc`, doesn't stop Panorama:
+it uses the default instead, and says so at startup and on the Settings page.
 
 ### Where your projects live
 
@@ -279,6 +284,11 @@ time when you miss it. A tab always shows the most urgent state below it, so you
 never have to open one to find out whether it needs you. A session left for more
 than a day stops counting as finished and the worktree falls back to showing its
 git state — otherwise stale work reads as done.
+
+If you use Claude Code's own worktrees, which it creates under
+`.claude/worktrees/` inside the repository, add `.claude/` to that
+repository's `.gitignore`. Otherwise git sees `.claude/` as an untracked
+folder, and the main checkout's lane always shows amber.
 
 Within a tab you get project-level notes and todos — for decisions and
 conventions that outlive a single branch — alongside per-worktree notes for

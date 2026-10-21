@@ -6,6 +6,36 @@ All notable changes to Panorama are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-21
+
+### Fixed
+- A value in `panorama.env` that isn't valid, such as `PANORAMA_SCAN_DEPTH=abc`,
+  stopped Panorama from starting. It now falls back to the default for that
+  option and reports the line at startup and on the Settings page. For a value
+  from the file, the field shows it, and saving any valid value replaces the
+  line; a value from an environment variable has to be fixed there. An empty
+  `PANORAMA_ROOTS` stays valid when `PANORAMA_REPOS` is set.
+- Writes from other websites are refused explicitly. Panorama already
+  rejected the requests a browser can send cross-site without asking, but only
+  as a side effect of how FastAPI parses bodies; now any write whose origin is
+  not 127.0.0.1 or localhost gets 403, and a write with a body must be JSON.
+- A Claude Code session in a worktree nested inside another one (Claude Code
+  creates its own under `<repo>/.claude/worktrees/`) also showed up on the
+  outer worktree's lane, which then took on its status. Each session, and each
+  live `claude` process, now belongs only to the deepest worktree that
+  contains it.
+
+### Changed
+- `PANORAMA_ENV` now names the one config file to use. Before, a missing file
+  was skipped and Panorama fell back to `./panorama.env` or
+  `~/.config/panorama/panorama.env`, and the Settings page saved there; now
+  Panorama reads only the named file and the Settings page creates it. If it
+  names a folder, startup says so and a save is refused with that reason.
+
+### Documentation
+- The README advises adding `.claude/` to `.gitignore` in repositories where
+  Claude Code creates its own worktrees, so the main lane doesn't stay amber.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
@@ -62,6 +92,7 @@ First public release.
   at no file gets a warning.
 - A launchd job for starting at login on macOS.
 
-[Unreleased]: https://github.com/kevalo-be/panorama/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kevalo-be/panorama/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/kevalo-be/panorama/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/kevalo-be/panorama/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kevalo-be/panorama/releases/tag/v0.1.0

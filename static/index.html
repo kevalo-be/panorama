@@ -797,11 +797,12 @@ function paintConfig() {
         const badges = [`<span class="badge">${esc(SOURCE_LABEL[o.source])}</span>`];
         if (!o.live) badges.push(`<span class="badge">restart</span>`);
         if (o.restart_pending) badges.push(`<span class="badge is-warn">restart pending</span>`);
+        const problem = o.problem ? `<div class="config-missing" id="${id}-problem">${esc(o.problem)}</div>` : "";
         const missing = o.missing.length
           ? `<div class="config-missing" id="${id}-missing">Not found: ${o.missing.map(esc).join(", ")}</div>` : "";
         const error = configErrors[o.name]
           ? `<div class="config-error" id="${id}-error">${esc(configErrors[o.name])}</div>` : "";
-        const describedBy = [configErrors[o.name] && `${id}-error`, o.missing.length && `${id}-missing`,
+        const describedBy = [configErrors[o.name] && `${id}-error`, o.problem && `${id}-problem`, o.missing.length && `${id}-missing`,
                              `${id}-help`].filter(Boolean).join(" ");
         return `
           <div class="config-row">
@@ -811,7 +812,7 @@ function paintConfig() {
                      value="${esc(o.value)}" data-original="${esc(o.value)}"
                      placeholder="${esc(o.default)}" ${o.editable ? "" : "readonly"}
                      aria-describedby="${describedBy}" ${configErrors[o.name] ? 'aria-invalid="true"' : ""}>
-              ${error}${missing}
+              ${error}${problem}${missing}
               <div class="config-help" id="${id}-help">${esc(o.help)} ${badges.join(" ")}</div>
             </div>
           </div>`;
@@ -889,13 +890,14 @@ async function saveConfig(changes) {
     return;
   }
   configErrors = (data.detail && data.detail.errors) || {};
+  const serverMessage = data.detail && data.detail.message;
   repaintKeeping(typed);
   if (Object.keys(configErrors).length) {
     setNotice("Nothing was saved. Fix the fields marked in red.");
     const first = document.querySelector('.config-form [aria-invalid="true"]');
     if (first) first.focus();
   } else {
-    setNotice(`Nothing was saved (HTTP ${res.status}). Check the Panorama log.`);
+    setNotice(serverMessage || `Nothing was saved (HTTP ${res.status}). Check the Panorama log.`);
   }
 }
 

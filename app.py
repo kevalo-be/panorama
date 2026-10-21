@@ -27,13 +27,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 HOME = Path.home()
 # Bundled files (static/) sit next to app.py, or in the unpacked bundle when
@@ -91,14 +91,15 @@ def parse_env_lines(text: str) -> dict[str, str]:
 def load_env_file() -> Path | None:
     """Read the first panorama.env found and return its path, or None.
 
-    Lookup order: $PANORAMA_ENV, ./panorama.env (current directory), then
-    ~/.config/panorama/panorama.env. Real environment variables always win.
+    Lookup order: ./panorama.env (current directory), then
+    ~/.config/panorama/panorama.env. $PANORAMA_ENV, when set, replaces that
+    search: only that file is read (a missing one means no settings yet), and
+    the Settings page saves to it. Real environment variables always win.
     """
-    candidates = [
-        Path(os.environ["PANORAMA_ENV"]).expanduser() if os.environ.get("PANORAMA_ENV") else None,
-        Path.cwd() / "panorama.env",
-        HOME / ".config" / "panorama" / "panorama.env",
-    ]
+    if os.environ.get("PANORAMA_ENV"):
+        candidates = [Path(os.environ["PANORAMA_ENV"]).expanduser()]
+    else:
+        candidates = [Path.cwd() / "panorama.env", HOME / ".config" / "panorama" / "panorama.env"]
     for path in candidates:
         if not path or not path.is_file():
             continue
@@ -124,6 +125,61 @@ def split_paths(value: str) -> list[Path]:
     return [Path(p.strip()).expanduser() for p in value.split(":") if p.strip()]
 
 
+def validate_option(name: str, value: str) -> str | None:
+    """An error message for this value, or None when it is acceptable."""
+    meta = OPTION_BY_NAME[name]
+    if not value.isprintable():
+        return "Must be a single line of plain text."
+    if value and (value[0] in "\"'" or value[-1] in "\"'"):
+        return "Leave out the quotes."
+    kind = meta["kind"]
+    if kind in ("int", "number"):
+        try:
+            number = int(value) if kind == "int" else float(value)
+        except ValueError:
+            return "Must be a whole number." if kind == "int" else "Must be a number."
+        if not meta["min"] <= number <= meta["max"]:
+            return f"Must be between {meta['min']} and {meta['max']}."
+    elif kind == "paths":
+        if name == "PANORAMA_ROOTS" and not split_paths(value):
+            return "Give at least one folder."
+    elif kind == "path":
+        if not value:
+            return "Give a folder."
+    elif kind == "file":
+        if not value:
+            return "Give a file path."
+        if Path(value).expanduser().is_dir():
+            return "This is a folder; give a file path."
+    elif kind == "url":
+        if value and not value.startswith(("http://", "https://")):
+            return "Must start with http:// or https://, or be empty."
+    return None
+
+
+# Options whose value (from panorama.env or the environment) is not valid:
+# name -> message. They fall back to their default instead of stopping startup.
+INVALID_OPTIONS: dict[str, str] = {}
+INVALID_VALUES: dict[str, str] = {}  # the rejected raw value, shown in its field
+
+
+def drop_invalid_options() -> None:
+    """Replace invalid option values with their defaults, remembering why."""
+    for name in OPTION_BY_NAME:
+        if name not in os.environ:
+            continue
+        value = os.environ[name].strip()
+        error = validate_option(name, value)
+        if name == "PANORAMA_ROOTS" and not value and os.environ.get("PANORAMA_REPOS", "").strip():
+            error = None  # no roots, only the listed repos: a valid setup
+        if error:
+            where = "the environment" if name in FROM_ENVIRONMENT else "panorama.env"
+            INVALID_OPTIONS[name] = (f"{name}={value} in {where} is not valid ({error.rstrip('.')}); "
+                                     f"using the default, {OPTION_BY_NAME[name]['default'] or 'empty'}.")
+            INVALID_VALUES[name] = value
+            del os.environ[name]
+
+
 def apply_live_options() -> None:
     """(Re)read the options that may change while running."""
     global ROOTS, EXTRA_REPOS, CLAUDE_PROJECTS, JIRA_BASE, SCAN_DEPTH, CACHE_SECONDS
@@ -136,6 +192,7 @@ def apply_live_options() -> None:
     CACHE_SECONDS = float(option("PANORAMA_CACHE_SECONDS"))
 
 
+drop_invalid_options()
 ROOTS: list[Path] = []
 EXTRA_REPOS: list[Path] = []
 CLAUDE_PROJECTS = Path()
@@ -158,6 +215,33 @@ app = FastAPI(title="Panorama", version=__version__)
 # Only answer requests addressed to this machine. Stops a web page from using
 # DNS rebinding to read the board or change its configuration.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def refuse_cross_site_writes(request: Request, call_next: Any) -> Any:
+    """Writes only from Panorama's own page, never from another website.
+
+    Browsers label every write with where it came from (Sec-Fetch-Site,
+    Origin). Anything not from 127.0.0.1/localhost is refused, and a write
+    with a body must be JSON, which no plain HTML form can send. Requests
+    without these headers (curl, scripts on this machine) pass: they could
+    edit the files directly anyway.
+    """
+    if request.method in WRITE_METHODS:
+        site = request.headers.get("sec-fetch-site")
+        origin = request.headers.get("origin")
+        # exact match with the address this request was sent to (TrustedHost
+        # already limits that to 127.0.0.1/localhost), so another local app on
+        # a different port is refused too
+        own = f"http://{request.headers.get('host', '')}"
+        if site in ("cross-site", "same-site") or (origin is not None and origin != own):
+            return JSONResponse({"detail": "Writes from other websites are refused."}, status_code=403)
+        content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if request.method != "DELETE" and content_type != "application/json":
+            return JSONResponse({"detail": "Send the request body as JSON."}, status_code=415)
+    return await call_next(request)
 # Serves the manifest and icons for "Add to Dock" / "Install app". index.html
 # itself is returned by the "/" route below.
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -180,6 +264,17 @@ def is_within(child: str, parent: str) -> bool:
     c = os.path.normpath(child)
     p = os.path.normpath(parent)
     return c == p or c.startswith(p.rstrip("/") + "/")
+
+
+def best_lane(path: str, lane_paths: list[str]) -> str | None:
+    """The deepest lane path that contains path, or None.
+
+    Worktrees can nest (Claude Code puts its own under <repo>/.claude/worktrees),
+    so a session inside a nested worktree is also inside the main checkout; it
+    belongs only to the nested one.
+    """
+    matches = [lane for lane in lane_paths if is_within(path, lane)]
+    return max(matches, key=len) if matches else None
 
 
 def short_path(path: str, home: str = str(HOME)) -> str:
@@ -557,14 +652,6 @@ def build_overview() -> dict[str, Any]:
                 if match:
                     ticket = match.group(1)
 
-            mine = []
-            real_path = canonical(path)
-            for session in sessions:
-                if is_within(session_cwds[session["id"]], real_path):
-                    mine.append(session)
-                    claimed.add(session["id"])
-            mine.sort(key=lambda s: s["age_seconds"])
-
             lanes.append({
                 "key": path,
                 "project_key": common_dir,
@@ -575,11 +662,31 @@ def build_overview() -> dict[str, Any]:
                 "ticket": ticket,
                 "ticket_url": f"{JIRA_BASE}/browse/{ticket}" if ticket and JIRA_BASE else None,
                 "git": worktree_facts(path),
-                "sessions": mine,
-                "live_pids": [pid for cwd, pids in live.items() if is_within(cwd, real_path) for pid in pids],
+                "sessions": [],
+                "live_pids": [],
                 "note": notes.get(path, ""),
                 "todos": todos.get(path, []),
+                "_real_path": canonical(path),
             })
+
+    # Each session and each live process goes to exactly one lane: the deepest
+    # worktree that contains its directory.
+    by_real_path: dict[str, dict[str, Any]] = {}
+    for lane in lanes:  # first lane wins if two ever resolve to the same path
+        by_real_path.setdefault(lane["_real_path"], lane)
+    lane_paths = list(by_real_path)
+    for session in sessions:
+        home = best_lane(session_cwds[session["id"]], lane_paths)
+        if home is not None:
+            by_real_path[home]["sessions"].append(session)
+            claimed.add(session["id"])
+    for cwd, pids in live.items():
+        home = best_lane(cwd, lane_paths)
+        if home is not None:
+            by_real_path[home]["live_pids"].extend(pids)
+    for lane in lanes:
+        lane["sessions"].sort(key=lambda s: s["age_seconds"])
+        del lane["_real_path"]
 
     for lane in lanes:
         git_info = lane["git"]
@@ -777,40 +884,12 @@ def save_settings(setting: SettingIn) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 def config_file_path() -> Path:
-    """The file a save writes to: the one loaded, or the per-user default."""
-    return ENV_FILE or HOME / ".config" / "panorama" / "panorama.env"
-
-
-def validate_option(name: str, value: str) -> str | None:
-    """An error message for this value, or None when it is acceptable."""
-    meta = OPTION_BY_NAME[name]
-    if not value.isprintable():
-        return "Must be a single line of plain text."
-    if value and (value[0] in "\"'" or value[-1] in "\"'"):
-        return "Leave out the quotes."
-    kind = meta["kind"]
-    if kind in ("int", "number"):
-        try:
-            number = int(value) if kind == "int" else float(value)
-        except ValueError:
-            return "Must be a whole number." if kind == "int" else "Must be a number."
-        if not meta["min"] <= number <= meta["max"]:
-            return f"Must be between {meta['min']} and {meta['max']}."
-    elif kind == "paths":
-        if name == "PANORAMA_ROOTS" and not split_paths(value):
-            return "Give at least one folder."
-    elif kind == "path":
-        if not value:
-            return "Give a folder."
-    elif kind == "file":
-        if not value:
-            return "Give a file path."
-        if Path(value).expanduser().is_dir():
-            return "This is a folder; give a file path."
-    elif kind == "url":
-        if value and not value.startswith(("http://", "https://")):
-            return "Must start with http:// or https://, or be empty."
-    return None
+    """The file a save writes to: the one loaded, else $PANORAMA_ENV, else the per-user default."""
+    if ENV_FILE:
+        return ENV_FILE
+    if os.environ.get("PANORAMA_ENV"):
+        return Path(os.environ["PANORAMA_ENV"]).expanduser()
+    return HOME / ".config" / "panorama" / "panorama.env"
 
 
 def missing_paths(name: str, value: str) -> list[str]:
@@ -857,6 +936,8 @@ def get_config() -> dict[str, Any]:
     for meta in OPTIONS:
         name = meta["name"]
         value = option(name)
+        if name in INVALID_VALUES and name not in FROM_ENVIRONMENT:
+            value = INVALID_VALUES[name]  # the bad line from the file, so any valid edit saves
         if STARTED_BY_APP and name == "PORT":
             source = "app"
         else:
@@ -872,6 +953,7 @@ def get_config() -> dict[str, Any]:
             "live": meta["live"],
             "restart_pending": not meta["live"] and value != STARTED_WITH[name],
             "missing": missing_paths(name, value),
+            "problem": INVALID_OPTIONS.get(name),
         })
     return {"file": str(config_file_path()), "file_exists": config_file_path().is_file(),
             "options": options}
@@ -907,10 +989,16 @@ def _save_config(changes: dict[str, str]) -> dict[str, Any]:
             cleaned[name] = value
     if errors:
         raise HTTPException(400, {"errors": errors})
+    if cleaned and config_file_path().is_dir():
+        raise HTTPException(409, {"errors": {}, "message":
+            f"PANORAMA_ENV points to a folder, not a file: {config_file_path()}. Nothing was saved."})
     if cleaned:
         write_env_file(config_file_path(), cleaned)
         FILE_VALUES.update(cleaned)
         os.environ.update(cleaned)
+        for name in cleaned:
+            INVALID_OPTIONS.pop(name, None)
+            INVALID_VALUES.pop(name, None)
         apply_live_options()
         _overview_cache["at"] = 0.0
     return get_config()
@@ -940,8 +1028,12 @@ if __name__ == "__main__":
         print(f"panorama {__version__}: no panorama.env found; using defaults "
               "(see panorama.env.example)", file=sys.stderr)
     wanted = os.environ.get("PANORAMA_ENV")
-    if wanted and not Path(wanted).expanduser().is_file():
-        print(f"  warning: PANORAMA_ENV={wanted} is not a file, ignored", file=sys.stderr)
+    if wanted and Path(wanted).expanduser().is_dir():
+        print(f"  warning: PANORAMA_ENV={wanted} is a folder, not a file; no settings read, and Settings can't save", file=sys.stderr)
+    elif wanted and not Path(wanted).expanduser().is_file():
+        print(f"  PANORAMA_ENV={wanted} does not exist yet; Settings will create it", file=sys.stderr)
+    for problem in INVALID_OPTIONS.values():
+        print(f"  warning: {problem}", file=sys.stderr)
     for root in ROOTS:
         print(f"  scanning {root}{'' if root.is_dir() else '  (missing)'}", file=sys.stderr)
     for repo in EXTRA_REPOS:
